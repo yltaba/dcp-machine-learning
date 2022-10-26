@@ -10,4 +10,6 @@ Incrementei este modelo (Gaussian Naive Bayes) com uma etapa de *model tuning* u
 
 Em seguida, apresento um modelo classificador Random Forest também com e sem *model tuning* para os parâmetros `n_estimators`, `max_depth`. `min_samples_split`, `criterion`, [que controlam pontos importantes do modelo](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html), como o número de árvores na floresta (`n_estimators`) e a função que mede a qualidade de uma divisão na árvore (`criterion`).
 
-Este modelo teve performance superior, seguindo a métrica de acuracidade da própria biblioteca `accuracy_score`, e foi validado utilizando *cross validation* com `cross_val_score()`.
+Este modelo teve performance superior, seguindo a métrica de acuracidade da própria biblioteca `accuracy_score`, e foi validado utilizando *cross validation* com `cross_val_score(cv=10)`.
+
+Os modelos foram testados com uma base *holdout* para avaliar modelos com amostra de 30% do total da base de treino.  
