@@ -1,0 +1,225 @@
+---
+title: "dados_gastos_campanha"
+format: html
+editor: visual
+---
+
+# Gastos
+
+Gastos totais por eleição e município.
+
+```{r}
+library(tidyverse)
+
+dados2004 <- read.csv("DespesaCandidato.csv", sep=';')
+dados2004$ano_eleicao <- 2004
+dados2004 <- 
+  dados2004 %>%
+  select(ano_eleicao, SG_UE_SUP, SG_UE, NO_UE, DS_CARGO, 
+         SG_PART, NO_CAND, `RTRIM.LTRIM.DR.DS_TITULO..`, VR_DESPESA)
+dados2004 <- dados2004 %>% 
+  rename(tipo_despesa = `RTRIM.LTRIM.DR.DS_TITULO..`,
+         uf = SG_UE_SUP,
+         codigo_municipio = SG_UE,
+         nome_municipio = NO_UE ,
+         cargo = DS_CARGO,
+         partido = SG_PART,
+         nome_candidato = NO_CAND,
+         valor_despesa = VR_DESPESA)
+
+dados2008 <- read.csv("despesas_candidatos_2008_brasil.csv", sep=';')
+dados2008$ano_eleicao <- 2008
+
+dados2008 <- dados2008 %>% 
+  select(ano_eleicao, SG_UE_SUPERIOR, SG_UE, NM_UE, DS_CARGO, SG_PARTIDO, NM_CANDIDATO, DS_TITULO, VR_DESPESA)
+
+dados2008 <- dados2008 %>% 
+  rename(uf = SG_UE_SUPERIOR,
+         codigo_municipio = SG_UE,
+         nome_municipio = NM_UE,
+         cargo = DS_CARGO,
+         partido = SG_PARTIDO,
+         nome_candidato = NM_CANDIDATO,
+         tipo_despesa = DS_TITULO,
+         valor_despesa = VR_DESPESA
+         )
+
+dados2012 <- read.csv("despesas_candidatos_2012_brasil.txt", sep=';')
+dados2012$ano_eleicao <- 2012
+dados2012 <- dados2012 %>% 
+  select(ano_eleicao, UF, `Número.UE`, Município, Cargo, `Sigla..Partido`, `Nome.candidato`, `Tipo.despesa`, `Valor.despesa`)
+
+
+dados2012 <- dados2012 %>% 
+  rename(uf = UF,
+         codigo_municipio = `Número.UE`,
+         nome_municipio = Município,
+         cargo = Cargo,
+         partido = `Sigla..Partido`,
+         nome_candidato = `Nome.candidato`,
+         tipo_despesa = `Tipo.despesa`,
+         valor_despesa = `Valor.despesa`)
+
+dados2004$codigo_municipio <- as.numeric(dados2004$codigo_municipio)
+dados2008$codigo_municipio <- as.numeric(dados2008$codigo_municipio)
+dados2012$codigo_municipio <- as.numeric(dados2012$codigo_municipio)
+dados2016$codigo_municipio <- as.numeric(dados2016$codigo_municipio)
+
+gastos <- bind_rows(dados2004, dados2008, dados2012, dados2016)
+
+gastos$valor_despesa <- as.numeric(gastos$valor_despesa)
+gastos$codigo_municipio <- as.numeric(gastos$codigo_municipio)
+
+gastos_municipio <- gastos %>% 
+  group_by(ano_eleicao, codigo_municipio) %>% 
+  summarize(total_despesa = sum(valor_despesa, na.rm=T))
+```
+
+# Resultados eleitorais
+
+```{r}
+#| warning: false
+anos <- c(2004, 2008, 2012, 2016)
+
+resultados_eleicoes <- data.frame()
+for (ano in anos) {
+  resultados <- electionsBR::vote_mun_zone_local(ano)
+  resultados <- 
+    resultados %>%
+    clean_names() %>%
+    select(
+      ano_eleicao, sigla_uf, descricao_cargo, 
+      codigo_municipio, nome_municipio,
+      nome_candidato, sigla_partido,
+      composicao_legenda, desc_sit_cand_tot, total_votos
+    ) %>% 
+    filter(descricao_cargo == "Vereador" | descricao_cargo == "VEREADOR") %>% 
+    group_by(
+      ano_eleicao, sigla_uf, 
+      codigo_municipio, nome_municipio,
+      nome_candidato, sigla_partido,
+      composicao_legenda, desc_sit_cand_tot
+    ) %>% 
+    summarize(
+      total_votos = sum(total_votos)
+    )
+  
+  resultados_eleicoes <- bind_rows(resultados_eleicoes, resultados)
+} 
+
+nep_votos <- 
+  resultados_eleicoes %>% 
+  select(
+    ano_eleicao, sigla_uf, codigo_municipio, 
+    nome_municipio, sigla_partido, total_votos
+  ) %>% 
+  group_by(
+    ano_eleicao, codigo_municipio
+  ) %>% 
+  mutate(
+    total_votos_mun = sum(total_votos)
+  ) %>%
+  ungroup() %>% 
+  group_by(
+    ano_eleicao, sigla_uf, codigo_municipio, 
+    nome_municipio, sigla_partido
+  ) %>% 
+  mutate(
+    total_votos_partido = sum(total_votos),
+    prop_total_votos_partido = total_votos_partido / total_votos_mun,
+    quadrado_prop_total_votos_partido = prop_total_votos_partido ^ 2
+  ) %>% 
+  select(
+    -total_votos
+  ) %>% 
+  distinct(
+    ano_eleicao, sigla_uf, codigo_municipio, 
+    nome_municipio, sigla_partido, total_votos_mun,
+    total_votos_partido, prop_total_votos_partido, quadrado_prop_total_votos_partido
+  ) %>% 
+  ungroup() %>% 
+  group_by(
+    ano_eleicao, codigo_municipio
+  ) %>% 
+  mutate(
+    soma_quadrados_prop = sum(quadrado_prop_total_votos_partido),
+    nep_votos = 1/soma_quadrados_prop
+  ) %>% 
+  distinct(
+    ano_eleicao, sigla_uf, codigo_municipio,
+    nome_municipio, total_votos_mun, nep_votos
+  )
+
+nep_votos$codigo_municipio <- as.numeric(nep_votos$codigo_municipio)
+```
+
+# Resultados + gastos
+
+```{r}
+nep_votos_gastos <- nep_votos %>% left_join(gastos_municipio, by=c("ano_eleicao", "codigo_municipio"))
+```
+
+# Resultados + gastos + magnitude
+
+```{r}
+magnitude_2004 <- electionsBR::seats_local(2004)
+magnitude_2004 <- magnitude_2004 %>% 
+  clean_names() %>%
+  rename(magnitude = na_5,
+         codigo_municipio = na,
+         cargo = na_4) %>% 
+  filter(cargo %in% c("Vereador", "VEREADOR")) %>% 
+  select(ano_eleicao, codigo_municipio, magnitude)
+
+magnitude_2008 <- electionsBR::seats_local(2008)
+magnitude_2008 <- magnitude_2008 %>% 
+  clean_names() %>%
+  rename(magnitude = na_5,
+         codigo_municipio = na,
+         cargo = na_4) %>% 
+  filter(cargo %in% c("Vereador", "VEREADOR")) %>% 
+  select(ano_eleicao, codigo_municipio, magnitude)
+
+magnitude_2012 <- electionsBR::seats_local(2012)
+magnitude_2012 <- magnitude_2012 %>% 
+  clean_names() %>%
+  rename(magnitude = na_5,
+         codigo_municipio = na,
+         cargo = na_4) %>% 
+  filter(cargo %in% c("Vereador", "VEREADOR")) %>% 
+  select(ano_eleicao, codigo_municipio, magnitude)
+
+magnitude_2016 <- electionsBR::seats_local(2016)
+magnitude_2016 <- magnitude_2016 %>% 
+  clean_names() %>% 
+  rename(magnitude = qtde_vagas,
+         codigo_municipio = sigla_ue) %>% 
+  filter(descricao_cargo %in% c("Vereador", "VEREADOR")) %>% 
+  select(ano_eleicao, codigo_municipio, magnitude)
+
+m <- bind_rows(magnitude_2004, magnitude_2008, magnitude_2012, magnitude_2016)
+
+# join
+m$codigo_municipio <- as.numeric(m$codigo_municipio)
+nep_votos_gastos_magnitude <- nep_votos_gastos %>% left_join(m, by=c("ano_eleicao", "codigo_municipio"))
+```
+
+# Resultados + gastos + magnitude + população
+
+```{r}
+codigos <- read.csv("https://raw.githubusercontent.com/betafcc/Municipios-Brasileiros-TSE/master/municipios_brasileiros_tse.csv")
+codigos <- codigos %>% rename(codigo_municipio = codigo_tse)
+```
+
+```{r}
+nep_votos_gastos_magnitude <- nep_votos_gastos_magnitude %>% left_join(codigos, by="codigo_municipio")
+
+pop <- read.csv("pop.csv", sep=';')
+
+pop <- pop %>% clean_names() %>% rename(codigo_ibge = cod_mun_ibge)
+
+nep_votos_gastos_magnitude <- nep_votos_gastos_magnitude %>% left_join(pop, by=c("ano_eleicao", "codigo_ibge"))
+
+nep_votos_gastos_magnitude <- nep_votos_gastos_magnitude %>% 
+  mutate(total_despesa_milhao = total_despesa / 1000000)
+```
